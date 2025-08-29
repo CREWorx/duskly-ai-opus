@@ -1,7 +1,6 @@
 'use client';
 
 import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
-import 'react-compare-slider/dist/style.css';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Download } from 'lucide-react';
