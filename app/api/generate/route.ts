@@ -34,10 +34,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check file size (20MB limit)
-    if (file.size > 20 * 1024 * 1024) {
+    // Check file size (30MB limit)
+    if (file.size > 30 * 1024 * 1024) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 20MB.' },
+        { error: 'File too large. Maximum size is 30MB.' },
         { status: 400 }
       );
     }

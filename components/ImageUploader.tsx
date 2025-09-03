@@ -23,8 +23,8 @@ export function ImageUploader({ onFileSelect, disabled }: ImageUploaderProps) {
     setError(null);
 
     // Validate file size
-    if (file.size > 20 * 1024 * 1024) {
-      setError('File too large. Maximum size is 20MB.');
+    if (file.size > 30 * 1024 * 1024) {
+      setError('File too large. Maximum size is 30MB.');
       return;
     }
 
@@ -76,7 +76,7 @@ export function ImageUploader({ onFileSelect, disabled }: ImageUploaderProps) {
             <>
               <p className="text-lg font-medium">Drag & drop your property photo</p>
               <p className="text-sm text-gray-500 mt-2">or click to browse</p>
-              <p className="text-xs text-gray-400 mt-4">JPEG or PNG • Max 20MB</p>
+              <p className="text-xs text-gray-400 mt-4">JPEG or PNG • Max 30MB</p>
             </>
           )}
         </div>
