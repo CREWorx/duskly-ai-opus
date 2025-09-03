@@ -9,6 +9,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  console.log('=== GENERATE API CALLED ===');
+  console.log('Timestamp:', new Date().toISOString());
+  
   try {
     // Parse multipart form data
     const formData = await request.formData();
@@ -17,9 +20,17 @@ export async function POST(request: NextRequest) {
     const date = formData.get('date') as string;
     const bearing = formData.get('bearing') as string;
 
+    console.log('Form data received:', {
+      file: file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)` : 'No file',
+      address,
+      date,
+      bearing
+    });
+
     // Validate input
     const validation = GenerateSchema.safeParse({ address, date, bearing });
     if (!validation.success) {
+      console.error('Validation failed:', validation.error.errors);
       return NextResponse.json(
         { error: 'Invalid input', details: validation.error.errors },
         { status: 400 }
@@ -59,6 +70,7 @@ export async function POST(request: NextRequest) {
     const jobId = crypto.randomUUID();
 
     // Store original image
+    console.log('Storing original image to Vercel Blob...');
     const originalBlob = await put(
       `jobs/${jobId}/original.jpg`,
       buffer,
@@ -67,6 +79,7 @@ export async function POST(request: NextRequest) {
         contentType: file.type,
       }
     );
+    console.log('Original image stored:', originalBlob.url);
 
     // Configure Gemini model
     const model = google('gemini-2.5-flash-image-preview', {
@@ -81,6 +94,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Call Gemini for image generation
+    console.log('Calling Gemini API for image generation...');
+    console.log('Using model: gemini-2.5-flash-image-preview');
     const result = await generateImage({
       model,
       messages: [
@@ -100,17 +115,23 @@ export async function POST(request: NextRequest) {
     });
 
     // Extract generated image
+    console.log('Gemini API response received');
     let generatedImage: Buffer;
     
     if (result.images && result.images.length > 0) {
+      console.log('Found image in result.images array');
       generatedImage = Buffer.from(result.images[0], 'base64');
     } else if (result.image) {
+      console.log('Found image in result.image');
       generatedImage = Buffer.from(result.image, 'base64');
     } else {
+      console.error('No image found in Gemini response:', Object.keys(result));
       throw new Error('No image generated');
     }
+    console.log('Generated image size:', (generatedImage.length / 1024 / 1024).toFixed(2), 'MB');
 
     // Store result image
+    console.log('Storing generated image to Vercel Blob...');
     const resultBlob = await put(
       `jobs/${jobId}/result.jpg`,
       generatedImage,
@@ -119,8 +140,13 @@ export async function POST(request: NextRequest) {
         contentType: 'image/jpeg',
       }
     );
+    console.log('Generated image stored:', resultBlob.url);
 
     // Return URLs
+    console.log('=== GENERATION SUCCESSFUL ===');
+    console.log('Job ID:', jobId);
+    console.log('========================');
+    
     return NextResponse.json({
       success: true,
       jobId,
@@ -129,7 +155,15 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Generation error:', error);
+    console.error('=== GENERATION ERROR ===');
+    console.error('Error Type:', error.name);
+    console.error('Error Message:', error.message);
+    console.error('Error Stack:', error.stack);
+    if (error.response) {
+      console.error('API Response:', error.response);
+    }
+    console.error('========================');
+    
     return NextResponse.json(
       { error: error.message || 'Generation failed. Please try again.' },
       { status: 500 }
