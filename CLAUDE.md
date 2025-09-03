@@ -88,7 +88,7 @@ Uses XMLHttpRequest instead of fetch in `app/page.tsx` to enable real-time uploa
 
 1. **React Compare Slider CSS**: The CSS import is removed. Component works but without default styles.
 2. **React 19 Compatibility**: Must use `--legacy-peer-deps` for installations due to peer dependency conflicts.
-3. **Multiple Lockfiles Warning**: Next.js warns about workspace root detection. Can be ignored or fixed with `outputFileTracingRoot` config.
+3. **Multiple Lockfiles Warning**: Next.js warns about workspace root detection. Fixed with `outputFileTracingRoot` in `next.config.js`.
 
 ## Deployment Target
 
