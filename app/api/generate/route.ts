@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from '@ai-sdk/google';
-import { generateImage } from 'ai';
+import { generateText } from 'ai';
 import { put } from '@vercel/blob';
 import { GenerateSchema } from '@/lib/types';
 import { generatePrompt } from '@/lib/prompt';
@@ -96,8 +96,13 @@ export async function POST(request: NextRequest) {
     // Call Gemini for image generation
     console.log('Calling Gemini API for image generation...');
     console.log('Using model: gemini-2.5-flash-image-preview');
-    const result = await generateImage({
+    const result = await generateText({
       model,
+      providerOptions: {
+        google: { 
+          responseModalities: ['TEXT', 'IMAGE']  // Enable image generation
+        },
+      },
       messages: [
         {
           role: 'user',
@@ -116,18 +121,51 @@ export async function POST(request: NextRequest) {
 
     // Extract generated image
     console.log('Gemini API response received');
-    let generatedImage: Buffer;
+    console.log('Response structure:', {
+      hasFiles: !!result.files,
+      fileCount: result.files?.length || 0,
+      hasText: !!result.text,
+      responseKeys: Object.keys(result)
+    });
     
-    if (result.images && result.images.length > 0) {
-      console.log('Found image in result.images array');
-      generatedImage = Buffer.from(result.images[0], 'base64');
-    } else if (result.image) {
-      console.log('Found image in result.image');
-      generatedImage = Buffer.from(result.image, 'base64');
-    } else {
-      console.error('No image found in Gemini response:', Object.keys(result));
-      throw new Error('No image generated');
+    let generatedImage: Buffer | undefined;
+    
+    if (result.files && result.files.length > 0) {
+      console.log(`Found ${result.files.length} files in response`);
+      
+      // Look for an image file in the response
+      for (const file of result.files) {
+        console.log('File info:', {
+          mediaType: file.mediaType,
+          hasBase64: !!file.base64,
+          hasUint8Array: !!file.uint8Array
+        });
+        
+        if (file.mediaType && file.mediaType.startsWith('image/')) {
+          console.log('Found image file with mediaType:', file.mediaType);
+          
+          if (file.base64) {
+            // Remove data URL prefix if present
+            const base64Data = file.base64.includes(',') 
+              ? file.base64.split(',')[1] 
+              : file.base64;
+            generatedImage = Buffer.from(base64Data, 'base64');
+            console.log('Converted base64 to buffer');
+          } else if (file.uint8Array) {
+            generatedImage = Buffer.from(file.uint8Array);
+            console.log('Converted uint8Array to buffer');
+          }
+          break;
+        }
+      }
     }
+    
+    if (!generatedImage) {
+      console.error('No image found in Gemini response. Response keys:', Object.keys(result));
+      console.error('Files array:', result.files);
+      throw new Error('No image generated - check response structure');
+    }
+    
     console.log('Generated image size:', (generatedImage.length / 1024 / 1024).toFixed(2), 'MB');
 
     // Store result image
