@@ -17,7 +17,7 @@ Transform daytime real estate photos to golden hour using AI.
    ```
    
    Then add your API keys:
-   - **Gemini API Key**: Get from [Google AI Studio](https://aistudio.google.com/app/apikey)
+   - **Vercel AI Gateway API Key**: Get from [Vercel AI Gateway](https://vercel.com/account/ai-gateway)
    - **Vercel Blob Token**: Get from [Vercel Dashboard](https://vercel.com/dashboard/stores)
 
 3. **Run the development server:**
@@ -56,7 +56,7 @@ vercel --prod
 - Next.js 15
 - TypeScript
 - Tailwind CSS
-- Google Gemini 2.5 Flash Image Preview
+- Google Gemini 2.5 Flash Image Preview (via Vercel AI Gateway)
 - Vercel Blob Storage
 - React Compare Slider
 

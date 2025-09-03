@@ -11,7 +11,7 @@ Duskly.ai is an ultra-simple MVP application that transforms daytime real estate
 - **Framework**: Next.js 15 with App Router
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **AI Model**: Google Gemini 2.5 Flash Image Preview (`gemini-2.5-flash-image-preview`)
+- **AI Model**: Google Gemini 2.5 Flash Image Preview via Vercel AI Gateway (`google/gemini-2.5-flash-image-preview`)
 - **Storage**: Vercel Blob Storage
 - **UI Components**: shadcn/ui components
 - **Image Comparison**: React Compare Slider (note: CSS import removed due to module issues)
@@ -40,7 +40,7 @@ npm lint
 ## Environment Setup
 
 Two API keys are required in `.env.local`:
-- `GOOGLE_GENERATIVE_AI_API_KEY`: From Google AI Studio
+- `AI_GATEWAY_API_KEY`: From Vercel AI Gateway (https://vercel.com/account/ai-gateway)
 - `BLOB_READ_WRITE_TOKEN`: From Vercel Dashboard Blob store
 
 Copy `.env.local.example` to `.env.local` and add your keys. Never commit actual keys to the repository.

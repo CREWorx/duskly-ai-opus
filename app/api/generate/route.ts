@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google } from '@ai-sdk/google';
+import { gateway } from '@ai-sdk/gateway';
 import { generateText } from 'ai';
 import { put } from '@vercel/blob';
 import { GenerateSchema } from '@/lib/types';
@@ -13,6 +13,14 @@ export async function POST(request: NextRequest) {
   console.log('Timestamp:', new Date().toISOString());
   
   try {
+    // Check for required API keys
+    if (!process.env.AI_GATEWAY_API_KEY) {
+      console.error('Missing AI_GATEWAY_API_KEY environment variable');
+      return NextResponse.json(
+        { error: 'API configuration error. Please check environment variables.' },
+        { status: 500 }
+      );
+    }
     // Parse multipart form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -81,10 +89,8 @@ export async function POST(request: NextRequest) {
     );
     console.log('Original image stored:', originalBlob.url);
 
-    // Configure Gemini model
-    const model = google('gemini-2.5-flash-image-preview', {
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    });
+    // Use Gemini model through Vercel AI Gateway
+    const model = gateway('google/gemini-2.5-flash-image-preview');
 
     // Generate prompt
     const prompt = generatePrompt({
@@ -94,15 +100,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Call Gemini for image generation
-    console.log('Calling Gemini API for image generation...');
-    console.log('Using model: gemini-2.5-flash-image-preview');
+    console.log('Calling Gemini API through Vercel AI Gateway...');
+    console.log('Using model: google/gemini-2.5-flash-image-preview');
+    console.log('API Gateway configured:', !!process.env.AI_GATEWAY_API_KEY);
     const result = await generateText({
       model,
-      providerOptions: {
-        google: { 
-          responseModalities: ['TEXT', 'IMAGE']  // Enable image generation
-        },
-      },
       messages: [
         {
           role: 'user',
@@ -200,6 +202,26 @@ export async function POST(request: NextRequest) {
     if (error.response) {
       console.error('API Response:', error.response);
     }
+    
+    // Check for specific API Gateway errors
+    if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+      console.error('Authentication error - check AI_GATEWAY_API_KEY');
+      console.error('========================');
+      return NextResponse.json(
+        { error: 'Authentication failed. Please check your Vercel AI Gateway API key.' },
+        { status: 401 }
+      );
+    }
+    
+    if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+      console.error('Model not found - verify model availability in Vercel AI Gateway');
+      console.error('========================');
+      return NextResponse.json(
+        { error: 'Model not available. Please check Vercel AI Gateway access.' },
+        { status: 404 }
+      );
+    }
+    
     console.error('========================');
     
     return NextResponse.json(
