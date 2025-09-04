@@ -5,7 +5,8 @@ import { put } from '@vercel/blob';
 import { GenerateSchema } from '@/lib/types';
 import { generatePrompt } from '@/lib/prompt';
 
-export const runtime = 'nodejs';
+// Switch to Edge runtime to avoid 4.5MB function payload limit
+export const runtime = 'edge';
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
@@ -21,6 +22,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    
     // Parse multipart form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -70,23 +72,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to buffer for storage
+    // Convert file to buffer for storage and base64
     const buffer = Buffer.from(await file.arrayBuffer());
-
+    
     // Generate job ID
     const jobId = crypto.randomUUID();
 
-    // Store original image to Vercel Blob first
+    // Store original image to Vercel Blob first (for user reference)
     console.log('Storing original image to Vercel Blob...');
     const originalBlob = await put(
       `jobs/${jobId}/original.jpg`,
-      buffer as any,  // TypeScript workaround for Buffer type
+      buffer as any,  // Type casting for Edge runtime compatibility
       {
         access: 'public',
         contentType: file.type,
       }
     );
     console.log('Original image stored:', originalBlob.url);
+
+    // Convert image to base64 data URL for the AI Gateway
+    // The gateway requires base64 format, not URLs
+    const base64Image = buffer.toString('base64');
+    const dataUrl = `data:${file.type};base64,${base64Image}`;
+    console.log('Converted image to base64, size:', (dataUrl.length / 1024 / 1024).toFixed(2), 'MB');
 
     // Use Gemini model through Vercel AI Gateway
     const model = gateway('google/gemini-2.5-flash-image-preview');
@@ -98,14 +106,13 @@ export async function POST(request: NextRequest) {
       bearing: validation.data.bearing,
     });
 
-    // Call Gemini for image generation using the Vercel Blob URL
+    // Call Gemini for image generation
     console.log('Calling Gemini API through Vercel AI Gateway...');
     console.log('Using model: google/gemini-2.5-flash-image-preview');
-    console.log('Using image URL instead of base64:', originalBlob.url);
     console.log('API Gateway configured:', !!process.env.AI_GATEWAY_API_KEY);
     
     const result = await generateText({
-      model: model as any,  // TypeScript workaround for model version mismatch
+      model,
       messages: [
         {
           role: 'user',
@@ -113,63 +120,97 @@ export async function POST(request: NextRequest) {
             { type: 'text', text: prompt },
             { 
               type: 'image', 
-              image: originalBlob.url  // Use URL instead of base64!
+              image: dataUrl  // Use base64 data URL for gateway
             }
-          ] as any,  // TypeScript workaround for content type
+          ],
         },
       ],
       temperature: 0.7,
-      // Enable image output explicitly
-      providerOptions: { 
-        google: { 
-          responseModalities: ['TEXT', 'IMAGE'] 
-        } 
-      },
-    } as any);
+      // Enable image output explicitly via type casting
+      ...({
+        experimental_providerOptions: {
+          google: {
+            responseModalities: ['TEXT', 'IMAGE']
+          }
+        }
+      } as any),
+    });
 
-    // Extract generated image
+    // Extract generated image from response
     console.log('Processing response...');
     console.log('Response has text:', !!result.text);
-    // Note: files property may not exist when using gateway provider
-    const resultWithFiles = result as any;
-    console.log('Response has files:', !!resultWithFiles.files, 'Count:', resultWithFiles.files?.length || 0);
     
     let generatedImage: Buffer | undefined;
     
-    // Look for image in the files property (if it exists)
-    if (resultWithFiles.files && resultWithFiles.files.length > 0) {
-      console.log(`Found ${resultWithFiles.files.length} files in response`);
+    // In AI SDK v5, check various possible locations for the image
+    const resultAny = result as any;
+    
+    // Check for files in the result
+    if (resultAny.files && resultAny.files.length > 0) {
+      console.log(`Found ${resultAny.files.length} files in response`);
       
-      for (const file of resultWithFiles.files) {
+      for (const file of resultAny.files) {
         console.log('File info:', {
-          mediaType: file.mediaType,
-          hasBase64: !!file.base64,
-          hasUint8Array: !!file.uint8Array
+          mimeType: file.mimeType || file.mediaType,
+          hasData: !!file.data,
+          hasBase64: !!file.base64
         });
         
-        if (file.mediaType && file.mediaType.startsWith('image/')) {
-          console.log('Found image file with mediaType:', file.mediaType);
+        if (file.mimeType?.startsWith('image/') || file.mediaType?.startsWith('image/')) {
+          console.log('Found image file');
           
-          if (file.base64) {
-            // Remove data URL prefix if present
-            const base64Data = file.base64.includes(',') 
-              ? file.base64.split(',')[1] 
-              : file.base64;
+          if (file.data) {
+            // Handle base64 data
+            const base64Data = file.data.includes(',') 
+              ? file.data.split(',')[1] 
+              : file.data;
             generatedImage = Buffer.from(base64Data, 'base64');
             console.log('Converted base64 to buffer');
-          } else if (file.uint8Array) {
-            generatedImage = Buffer.from(file.uint8Array);
-            console.log('Converted uint8Array to buffer');
+          } else if (file.base64) {
+            generatedImage = Buffer.from(file.base64, 'base64');
+            console.log('Converted base64 to buffer');
           }
           break;
         }
       }
     }
     
+    // Check for images in response metadata
+    if (!generatedImage && resultAny.response) {
+      console.log('Checking response metadata for images...');
+      const responseData = resultAny.response;
+      
+      // Try to extract from various possible locations
+      if (responseData.images && responseData.images.length > 0) {
+        const image = responseData.images[0];
+        if (image.base64) {
+          generatedImage = Buffer.from(image.base64, 'base64');
+          console.log('Found image in response.images');
+        }
+      }
+    }
+    
+    // Check for provider-specific response
+    if (!generatedImage && resultAny.providerMetadata) {
+      console.log('Checking provider metadata...');
+      const metadata = resultAny.providerMetadata;
+      if (metadata.google?.files) {
+        for (const file of metadata.google.files) {
+          if (file.mimeType?.startsWith('image/')) {
+            if (file.data || file.base64) {
+              const base64Data = file.data || file.base64;
+              generatedImage = Buffer.from(base64Data.split(',').pop() || base64Data, 'base64');
+              console.log('Found image in provider metadata');
+              break;
+            }
+          }
+        }
+      }
+    }
+    
     if (!generatedImage) {
-      console.error('No image generated. Response text:', result.text?.substring(0, 500));
-      console.error('This may be due to Vercel Gateway 4.5MB response limit for image generation.');
-      throw new Error('No image generated - The response may exceed Vercel Gateway limits');
+      console.error('No image generated. Full result:', JSON.stringify(result, null, 2).substring(0, 1000));
+      throw new Error('No image generated in the response');
     }
     
     console.log('Generated image size:', (generatedImage.length / 1024 / 1024).toFixed(2), 'MB');
@@ -178,7 +219,7 @@ export async function POST(request: NextRequest) {
     console.log('Storing generated image to Vercel Blob...');
     const resultBlob = await put(
       `jobs/${jobId}/result.jpg`,
-      generatedImage as any,  // TypeScript workaround for Buffer type
+      generatedImage as any,  // Type casting for Edge runtime compatibility
       {
         access: 'public',
         contentType: 'image/jpeg',
@@ -223,6 +264,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Model not available. Please check Vercel AI Gateway access.' },
         { status: 404 }
+      );
+    }
+    
+    if (error.message?.includes('payload') || error.message?.includes('too large')) {
+      console.error('Payload too large - image exceeds size limits');
+      console.error('========================');
+      return NextResponse.json(
+        { error: 'Image is too large. Please use a smaller image (max ~20MB for best results).' },
+        { status: 413 }
       );
     }
     
