@@ -70,14 +70,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to buffer
+    // Convert file to buffer for storage
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64Image = buffer.toString('base64');
 
     // Generate job ID
     const jobId = crypto.randomUUID();
 
-    // Store original image
+    // Store original image to Vercel Blob first
     console.log('Storing original image to Vercel Blob...');
     const originalBlob = await put(
       `jobs/${jobId}/original.jpg`,
@@ -99,9 +98,10 @@ export async function POST(request: NextRequest) {
       bearing: validation.data.bearing,
     });
 
-    // Call Gemini for image generation
+    // Call Gemini for image generation using the Vercel Blob URL
     console.log('Calling Gemini API through Vercel AI Gateway...');
     console.log('Using model: google/gemini-2.5-flash-image-preview');
+    console.log('Using image URL instead of base64:', originalBlob.url);
     console.log('API Gateway configured:', !!process.env.AI_GATEWAY_API_KEY);
     
     const result = await generateText({
@@ -113,8 +113,7 @@ export async function POST(request: NextRequest) {
             { type: 'text', text: prompt },
             { 
               type: 'image', 
-              image: base64Image,
-              mediaType: file.type  // Changed from mimeType to mediaType
+              image: originalBlob.url  // Use URL instead of base64!
             }
           ] as any,  // TypeScript workaround for content type
         },
