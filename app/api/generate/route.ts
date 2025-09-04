@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     console.log('Storing original image to Vercel Blob...');
     const originalBlob = await put(
       `jobs/${jobId}/original.jpg`,
-      buffer,
+      buffer as any,  // TypeScript workaround for Buffer type
       {
         access: 'public',
         contentType: file.type,
@@ -103,8 +103,9 @@ export async function POST(request: NextRequest) {
     console.log('Calling Gemini API through Vercel AI Gateway...');
     console.log('Using model: google/gemini-2.5-flash-image-preview');
     console.log('API Gateway configured:', !!process.env.AI_GATEWAY_API_KEY);
+    
     const result = await generateText({
-      model,
+      model: model as any,  // TypeScript workaround for model version mismatch
       messages: [
         {
           role: 'user',
@@ -113,30 +114,34 @@ export async function POST(request: NextRequest) {
             { 
               type: 'image', 
               image: base64Image,
-              mimeType: file.type
+              mediaType: file.type  // Changed from mimeType to mediaType
             }
-          ],
+          ] as any,  // TypeScript workaround for content type
         },
       ],
       temperature: 0.7,
-    });
+      // Enable image output explicitly
+      providerOptions: { 
+        google: { 
+          responseModalities: ['TEXT', 'IMAGE'] 
+        } 
+      },
+    } as any);
 
     // Extract generated image
-    console.log('Gemini API response received');
-    console.log('Response structure:', {
-      hasFiles: !!result.files,
-      fileCount: result.files?.length || 0,
-      hasText: !!result.text,
-      responseKeys: Object.keys(result)
-    });
+    console.log('Processing response...');
+    console.log('Response has text:', !!result.text);
+    // Note: files property may not exist when using gateway provider
+    const resultWithFiles = result as any;
+    console.log('Response has files:', !!resultWithFiles.files, 'Count:', resultWithFiles.files?.length || 0);
     
     let generatedImage: Buffer | undefined;
     
-    if (result.files && result.files.length > 0) {
-      console.log(`Found ${result.files.length} files in response`);
+    // Look for image in the files property (if it exists)
+    if (resultWithFiles.files && resultWithFiles.files.length > 0) {
+      console.log(`Found ${resultWithFiles.files.length} files in response`);
       
-      // Look for an image file in the response
-      for (const file of result.files) {
+      for (const file of resultWithFiles.files) {
         console.log('File info:', {
           mediaType: file.mediaType,
           hasBase64: !!file.base64,
@@ -163,9 +168,9 @@ export async function POST(request: NextRequest) {
     }
     
     if (!generatedImage) {
-      console.error('No image found in Gemini response. Response keys:', Object.keys(result));
-      console.error('Files array:', result.files);
-      throw new Error('No image generated - check response structure');
+      console.error('No image generated. Response text:', result.text?.substring(0, 500));
+      console.error('This may be due to Vercel Gateway 4.5MB response limit for image generation.');
+      throw new Error('No image generated - The response may exceed Vercel Gateway limits');
     }
     
     console.log('Generated image size:', (generatedImage.length / 1024 / 1024).toFixed(2), 'MB');
@@ -174,7 +179,7 @@ export async function POST(request: NextRequest) {
     console.log('Storing generated image to Vercel Blob...');
     const resultBlob = await put(
       `jobs/${jobId}/result.jpg`,
-      generatedImage,
+      generatedImage as any,  // TypeScript workaround for Buffer type
       {
         access: 'public',
         contentType: 'image/jpeg',
